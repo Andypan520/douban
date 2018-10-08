@@ -1,0 +1,14 @@
+*/.project
+*.iml
+*/.settings
+.idea/
+*/.classpath
+**/target
+**/logs
+compressed/
+**/dblogs
+**/.classpath
+*.project
+*/bin/*
+*.settings
+*classes*
