@@ -2,8 +2,8 @@ import meta.Book2;
 import org.apache.commons.dbutils.DbUtils;
 import org.apache.commons.dbutils.QueryRunner;
 import org.apache.commons.dbutils.handlers.*;
-import org.junit.jupiter.api.Test;
 import db.C3P0Util;
+import org.junit.Test;
 
 import java.sql.Connection;
 import java.sql.SQLException;

@@ -10,10 +10,6 @@ import java.util.Map;
 
 import static com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES;
 
-/**
- * @author xuzc
- * datetime 18/3/13 下午5:58
- */
 public class JsonUtil {
     private static ObjectMapper objectMapper = new ObjectMapper();
 
