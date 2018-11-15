@@ -1,379 +1,614 @@
 package util;
 
-import org.apache.commons.lang.StringUtils;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.filter.Filter;
+import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 
 /**
- * Created by pandechuan on 2018/11/14.
+ * Created by pandechuan on 2018/11/15.
  */
 public class HbaseUtil {
-    public static Configuration config;
+
+    private static Configuration conf = null;
 
     static {
-        config = HBaseConfiguration.create();
-
-        // 数据库元数据操作对象
-        // Admin admin;
-        // config.addResource(new Path("D:\\hbase-1.2.5\\conf\\hbase-site.xml"));
-        // 取得一个数据库连接的配置参数对象
-//        // 设置连接参数：HBase数据库所在的主机IP
-//        config.set("hbase.zookeeper.quorum", "localhost");
-//        // 设置连接参数：HBase数据库使用的端口
-//        config.set("hbase.zookeeper.property.clientPort", "2181");
-        config = HBaseConfiguration.create();
-//        config.set("hbase.zookeeper.quorum", "127.0.0.1");
-        config.set("hbase.zookeeper.quorum", "10.242.15.197");
-        config.set("hbase.zookeeper.property.clientPort", "2181");
-        config.set("hbase.master", "127.0.0.1:60010");
-
-
+       /* conf = HBaseConfiguration.create();
+        //使用eclipse时必须添加这个，否则无法定位
+        conf.set("hbase.rootdir", "hdfs://sniper5:9000/hbase");
+        conf.set("hbase.zookeeper.quorum", "sniper5,sniper6,sniper7");
+        //conf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
+        */
+        conf = HBaseConfiguration.create();
+        conf.set("hbase.zookeeper.quorum", "10.242.15.197");
+        conf.set("hbase.zookeeper.property.clientPort", "2181");
+        conf.set("hbase.master", "127.0.0.1:60010");
     }
 
     /**
-     * 创建表
+     * 创建表（单个列族）
      *
-     * @param tableName 表名
-     * @param columns   列族
-     * @return
+     * @param tableName
+     * @param columnFamily
+     * @throws IOException
      */
-    public boolean createTable(String tableName, String[] columns) {
-        boolean result = false;
-        try {
-            try (HBaseAdmin Hbaseadmin = new HBaseAdmin(config)) {
-                if (Hbaseadmin.tableExists(tableName)) {
-                    System.out.println("表已经存在！");
-                    result = false;
-                } else {
-                    HTableDescriptor desc = new HTableDescriptor(tableName);
-                    for (String column : columns) {
-                        desc.addFamily(new HColumnDescriptor(column));
-                    }
-                    Hbaseadmin.createTable(desc);
-                    System.out.println("表创建成功！");
-                    result = true;
+    public static void create(String tableName, String columnFamily) throws IOException {
+        try (HBaseAdmin admin = new HBaseAdmin(conf)) {
+            if (admin.tableExists(tableName)) {
+                System.out.println("table exists...");
+            } else {
+                HTableDescriptor tableDesc = new HTableDescriptor(tableName);
+                tableDesc.addFamily(new HColumnDescriptor(columnFamily));
+                admin.createTable(tableDesc);
+                System.out.println("table create successful... ");
+            }
+        }
+    }
+
+    /**
+     * 创建表（多个列族）
+     *
+     * @param tableName
+     * @param columnFamily
+     * @throws IOException
+     */
+    public static void create(String tableName, String[] columnFamily) throws IOException {
+        try (HBaseAdmin admin = new HBaseAdmin(conf)) {
+            if (admin.tableExists(tableName)) {
+                System.out.println("table exists...");
+            } else {
+                HTableDescriptor tableDesc = new HTableDescriptor(tableName);
+                for (String family : columnFamily) {
+                    tableDesc.addFamily(new HColumnDescriptor(family));
                 }
+                admin.createTable(tableDesc);
+                System.out.println("table create successful... ");
             }
-        } catch (Exception e) {
-            result = false;
-            e.printStackTrace();
         }
-
-        return result;
-
     }
 
     /**
-     * 清空表
+     * 添加一条记录
      *
-     * @param tabName
-     * @return true 表示成功
+     * @param tableName
+     * @param rowKey
+     * @param columnFamily
+     * @param column
+     * @param value
+     * @throws IOException
      */
-    public boolean truncateTable(String tabName) {
-        boolean result = false;
-        try {
-            System.out.println("---------------清空表 START-----------------");
-            // 取得目标数据表的表名对象
-            TableName tableName = TableName.valueOf(tabName);
-            try (Admin admin = new HBaseAdmin(config)) {
-                // 设置表状态为无效
-                admin.disableTable(tableName);
-                // 清空指定表的数据
-                admin.truncateTable(tableName, true);
-            }
-            System.out.println("---------------清空表 End-----------------");
-            result = true;
-        } catch (Exception e) {
-            e.printStackTrace();
+    public static void put(String tableName, String rowKey, String columnFamily, String column, String value) throws IOException {
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Put p1 = new Put(Bytes.toBytes(rowKey));
+            p1.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(column), Bytes.toBytes(value));
+
+            table.put(p1);
         }
-        return result;
+    }
+
+    /**
+     * 添多条记录
+     *
+     * @param tableName
+     * @param rowKey
+     * @param columnFamily
+     * @param colValueMap
+     * @throws IOException
+     */
+    public static void put(String tableName, String rowKey, String columnFamily, Map<String, String> colValueMap) throws IOException {
+//        try (HTable table = new HTable(conf, tableName)) {
+//
+//            List<Put> putList = new ArrayList<Put>();
+//
+//            Set<String> set = colValueMap.keySet();
+//
+//            for (String column : set) {
+//                String value = colValueMap.get(column);
+//
+//                Put p = new Put(Bytes.toBytes(rowKey));
+//                p.add(columnFamily.getBytes(), column.getBytes(), value.getBytes());
+//
+//                putList.add(p);
+//            }
+//
+//            table.put(putList);
+//        }
+
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            List<Put> putList = Lists.newArrayList();
+            Set<String> set = colValueMap.keySet();
+
+            for (String column : set) {
+                String value = colValueMap.get(column);
+                Put p = new Put(Bytes.toBytes(rowKey));
+                p.addColumn(columnFamily.getBytes(), column.getBytes(), value.getBytes());
+                putList.add(p);
+            }
+
+            table.put(putList);
+        }
+
+        System.out.println("put " + "table:" + tableName + " rowKey:" + rowKey + " columnFamily:" + columnFamily + " colValueMap:" + colValueMap);
+    }
+
+    /**
+     * 读取一条记录
+     *
+     * @param tableName
+     * @param rowKey
+     * @param columnFamily
+     * @param column
+     * @return
+     * @throws IOException
+     */
+    public static String get(String tableName, String rowKey, String columnFamily, String column) throws IOException {
+        Result result;
+        String value;
+
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            //拿到rowKey对应的所有的列，result0.list().get(0),result0.list().get(1)...
+//            Get get0 = new Get(Bytes.toBytes(rowKey));
+//            Result result0 = table.get(get0);
+//
+//            //根据rowkey取得记录，打印记录的字段名，字段值
+//            List<Cell> cells = result0.listCells();
+//            cells.forEach(e -> {
+//                System.out.println("FamilyArray:" + Bytes.toString(e.getFamilyArray())
+//                        + " QualifierArray:" + Bytes.toString(e.getQualifierArray())
+//                        + " ValueArray:" + Bytes.toString(e.getValueArray()));
+//            });
+//
+//            List<KeyValue> keyValueList = result0.list();
+//            for (KeyValue keyValue : keyValueList) {
+//                System.out.println("key:" + Bytes.toString(keyValue.getKey()) + " value:" + Bytes.toString(keyValue.getValue()));
+//            }
+
+            //System.out.println("get:" + result0.size() + "  " + result0.list() + "  " + Bytes.toString(result0.list().get(0).getValue()));
+
+            Get get = new Get(Bytes.toBytes(rowKey));
+            get.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(column));
+            result = table.get(get);
+            System.out.println("size:" + result.size() + "   value:" + Bytes.toString(result.list().get(0).getValue()));
+
+        }
+        byte[] resultByte = result.getValue(columnFamily.getBytes(), column.getBytes());
+        value = new String(resultByte);
+        return value;
+    }
+
+    /**
+     * 显示所有数据
+     *
+     * @param tableName
+     * @throws IOException
+     */
+    public static void scan(String tableName) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+            scanner = table.getScanner(scan);
+        }
+        for (Result result : scanner) {
+            System.out.println("scan:" + result);
+        }
+    }
+
+    /**
+     * 显示所有数据
+     *
+     * @param tableName
+     * @param columnFamily
+     * @throws IOException
+     */
+    public static void scan(String tableName, String columnFamily) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+            //扫描列族
+            scan.addFamily(Bytes.toBytes(columnFamily));
+
+            scanner = table.getScanner(scan);
+        }
+        for (Result result : scanner) {
+            System.out.println("scan:" + result);
+            List<KeyValue> keyValueList = result.list();
+            for (KeyValue keyValue : keyValueList) {
+                System.out.println("key:" + Bytes.toString(keyValue.getKey()) + " value:" + Bytes.toString(keyValue.getValue()));
+            }
+        }
+        scanner.close();
+    }
+
+    /**
+     * 显示所有数据
+     *
+     * @param tableName
+     * @param columnFamily
+     * @param column
+     * @throws IOException
+     */
+    public static void scan(String tableName, String columnFamily, String column) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+
+            if (null != column && !column.trim().equals("")) {
+                //扫描列
+                scan.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(column));
+            } else {
+                //扫描列族
+                scan.addFamily(Bytes.toBytes(columnFamily));
+            }
+
+            scanner = table.getScanner(scan);
+        }
+        for (Result result : scanner) {
+            System.out.println("scan:" + result);
+            List<KeyValue> keyValueList = result.list();
+            for (KeyValue keyValue : keyValueList) {
+                System.out.println("key:" + Bytes.toString(keyValue.getKey()) + " value:" + Bytes.toString(keyValue.getValue()));
+            }
+        }
+        scanner.close();
+    }
+
+    /**
+     * select 。。。 from table where id between ... and
+     * 显示所有数据
+     *
+     * @param tableName
+     * @param columnFamily
+     * @param rowKeyBegin
+     * @param rowKeyEnd
+     * @throws IOException
+     */
+    public static void scan(String tableName, String columnFamily, List<String> columns, String rowKeyBegin, String rowKeyEnd) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+            scan.setStartRow(rowKeyBegin.getBytes());//开始位置
+            scan.setStopRow(rowKeyEnd.getBytes());//结束位置
+
+            for (String column : columns) {
+                //扫描列
+                scan.addColumn(columnFamily.getBytes(), column.getBytes());
+            }
+
+            scanner = table.getScanner(scan);
+        }
+        for (Result result : scanner) {
+            String rowKey = new String(result.getRow());
+
+            for (KeyValue keyValue : result.raw()) {
+                System.out.println(rowKey + ":" + new String(keyValue.getFamily()) + ":" + new String(keyValue.getQualifier()) + "=" + new String(keyValue.getValue()));
+            }
+        }
     }
 
     /**
      * 删除表
      *
-     * @param tabName
-     * @return true 删除成功;
-     */
-    public boolean deleteTable(String tabName) {
-        boolean result = false;
-        try {
-            System.out.println("---------------删除表 START-----------------");
-            // 设置表状态为无效
-            try (Admin admin = new HBaseAdmin(config)) {
-                admin.disableTable(TableName.valueOf(tabName));
-                // 删除指定的数据表
-                admin.deleteTable(TableName.valueOf(tabName));
-            }
-            System.out.println("---------------删除表 End-----------------");
-            result = true;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return true;
-    }
-
-    /**
-     * 删除行
-     *
-     * @param tabName
-     * @param rowkey
-     * @return
+     * @param tableName
      * @throws IOException
      */
-    public boolean deleteByRowKey(String tabName, String rowkey) throws IOException {
-        boolean result = false;
-        try {
-            System.out.println("---------------删除行 START-----------------");
-            // 取得待操作的数据表对象
-            Table table;
-            Delete delete;
-            try (Connection connection = ConnectionFactory.createConnection(config)) {
-                table = connection.getTable(TableName.valueOf(tabName));
+    public static void drop(String tableName) throws IOException {
+        try (HBaseAdmin admin = new HBaseAdmin(conf)) {
+            if (admin.tableExists(tableName)) {
+                admin.disableTable(tableName);
+                admin.deleteTable(tableName);
             }
-            // 创建删除条件对象
-            delete = new Delete(Bytes.toBytes(rowkey));
-            // 执行删除操作
-            table.delete(delete);
-            System.out.println("---------------删除行 End-----------------");
-            result = true;
-        } catch (Exception e) {
-            result = false;
-            e.printStackTrace();
         }
-        return result;
     }
 
-
     /**
-     * 新建列族
+     * 删除多条记录
      *
-     * @param tabName
-     * @param fName
-     * @return
+     * @param tableName
+     * @param rowKeys
      * @throws IOException
      */
-    public boolean addColumnFamily(String tabName, String fName) {
-        boolean result = false;
-        try {
-            System.out.println("---------------新建列族 START-----------------");
-            try (Admin admin = new HBaseAdmin(config)) {
-                // 取得目标数据表的表名对象
-                TableName tableName = TableName.valueOf(tabName);
-                // 创建列族对象
-                HColumnDescriptor columnDescriptor = new HColumnDescriptor(fName);
-                // 将新创建的列族添加到指定的数据表
-                admin.addColumn(tableName, columnDescriptor);
+    public static void delete(String tableName, String... rowKeys) throws IOException {
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            List<Delete> list = Lists.newArrayList();
+
+            for (String rowKey : rowKeys) {
+                Delete delete = new Delete(rowKey.getBytes());
+                list.add(delete);
             }
-            System.out.println("---------------新建列族 END-----------------");
-            result = true;
-        } catch (Exception e) {
-            result = false;
-            e.printStackTrace();
+
+            table.delete(list);
         }
-        return result;
     }
 
     /**
-     * 删除列族
+     * select 。。。 from table where id c_column = ?
+     * 条件过滤
      *
-     * @param tabName
-     * @param fname
-     * @return
-     */
-    public boolean deleteColumnFamily(String tabName, String fname) {
-        boolean result = false;
-        try {
-            System.out.println("---------------删除列族 START-----------------");
-            try (Admin admin = new HBaseAdmin(config)) {
-                // 取得目标数据表的表名对象
-                TableName tableName = TableName.valueOf(tabName);
-                // 删除指定数据表中的指定列族
-                admin.deleteColumn(tableName, fname.getBytes());
-            }
-            System.out.println("---------------删除列族 END-----------------");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return result;
-    }
-
-    /**
-     * 插入数据
-     */
-    public boolean insert(String tabName, List<Put> putList) {
-        boolean result = false;
-        try {
-            System.out.println("---------------插入数据 START-----------------");
-            Table table;
-            try (Connection connection = ConnectionFactory.createConnection(config)) {
-                // 取得一个数据表对象
-                table = connection.getTable(TableName.valueOf(tabName));
-            }
-            // 将数据集合插入到数据库
-            table.put(putList);
-
-            System.out.println("---------------插入数据 END-----------------");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return result;
-    }
-
-
-    /**
-     * 查询整表数据
-     */
-
-    public ResultScanner queryAllTable(String tabName) {
-        ResultScanner resultx = null;
-        try {
-            System.out.println("---------------查询整表数据 START-----------------");
-
-            // 取得数据表对象
-            Table table;
-            try (Connection connection = ConnectionFactory.createConnection(config)) {
-                table = connection.getTable(TableName.valueOf(tabName));
-            }
-            // 取得表中所有数据
-            resultx = table.getScanner(new Scan());
-            // 循环输出表中的数据
-            for (Result result : resultx) {
-                byte[] row = result.getRow();
-                System.out.println("row key is:" + new String(row));
-                List<Cell> listCells = result.listCells();
-                for (Cell cell : listCells) {
-                    byte[] familyArray = cell.getFamilyArray();
-                    byte[] qualifierArray = cell.getQualifierArray();
-                    byte[] valueArray = cell.getValueArray();
-                    System.out.println("row value is:" + new String(familyArray) + new String(qualifierArray)
-                            + new String(valueArray));
-                }
-            }
-            System.out.println("---------------查询整表数据 END-----------------");
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return resultx;
-    }
-
-
-    /**
-     * 按行键查询表数据
-     *
-     * @param tabName
-     * @param rowKey
-     * @return
+     * @param tableName
+     * @param columnFamily
+     * @param column
      * @throws IOException
      */
-    public Result queryTableByRowKey(String tabName, String rowKey) {
-        Result result = null;
-        try {
-            if (StringUtils.isEmpty(tabName) || StringUtils.isEmpty(rowKey)) {
-                return null;
-            }
-            System.out.println("---------------按行键查询表数据 START-----------------");
-            // 取得数据表对象
-            Table table;
-            Get get;
-            byte[] row;
-            List<Cell> listCells;
-            try (Connection connection = ConnectionFactory.createConnection(config)) {
-                table = connection.getTable(TableName.valueOf(tabName));
-            }
-            // 新建一个查询对象作为查询条件
-            get = new Get(rowKey.getBytes());
-            // 按行键查询数据
-            result = table.get(get);
-            row = result.getRow();
-            System.out.println("row key is:" + new String(row));
-            listCells = result.listCells();
-            for (Cell cell : listCells) {
-                byte[] familyArray = cell.getFamilyArray();
-                byte[] qualifierArray = cell.getQualifierArray();
-                byte[] valueArray = cell.getValueArray();
-                System.out.println("row value is:" + new String(familyArray) + new String(qualifierArray) + new String(valueArray));
-            }
-            System.out.println("---------------按行键查询表数据 END-----------------");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return result;
+    public static void query(String tableName, String columnFamily, String column, String value) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
 
-    }
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
 
-
-    /**
-     * 按条件查询表数据
-     */
-
-    public ResultScanner queryTableByCondition(String tabName, Filter filter) {
-        ResultScanner resultScanner = null;
-        try {
-            System.out.println("---------------按条件查询表数据 START-----------------");
-            // 取得数据表对象
-            Table table;
-            Scan scan;
-            try (Connection connection = ConnectionFactory.createConnection(config)) {
-                table = connection.getTable(TableName.valueOf(tabName));
-            }
-            // 创建一个查询过滤器
-            // Filter filter = new SingleColumnValueFilter(Bytes.toBytes("base"), Bytes.toBytes("name"), CompareOp.EQUAL, Bytes.toBytes("bookName6"));
-            // 创建一个数据表扫描器
-            scan = new Scan();
-            // 将查询过滤器加入到数据表扫描器对象
+            Filter filter = new SingleColumnValueFilter(columnFamily.getBytes(), column.getBytes(), CompareFilter.CompareOp.EQUAL, value.getBytes());
             scan.setFilter(filter);
-            // 执行查询操作，并取得查询结果
-            resultScanner = table.getScanner(scan);
 
-            // 循环输出查询结果
-            for (Result result : resultScanner) {
-                byte[] row = result.getRow();
-                System.out.println("row key is:" + new String(row));
-                List<Cell> listCells = result.listCells();
-                for (Cell cell : listCells) {
-                    System.out.println("family:" + Bytes.toString(CellUtil.cloneFamily(cell)));
-                    System.out.println("qualifier:" + Bytes.toString(CellUtil.cloneQualifier(cell)));
-                    System.out.println("value:" + Bytes.toString(CellUtil.cloneValue(cell)));
-                }
-            }
-
-            System.out.println("---------------按条件查询表数据 END-----------------");
-        } catch (Exception e) {
-            e.printStackTrace();
+            scanner = table.getScanner(scan);
         }
-        return resultScanner;
+        for (Result result : scanner) {
+            String rowKey = new String(result.getRow());
+
+            for (KeyValue keyValue : result.raw()) {
+                System.out.println(rowKey + ":" + new String(keyValue.getFamily()) + ":" + new String(keyValue.getQualifier()) + "=" + new String(keyValue.getValue()));
+            }
+        }
     }
 
+    /**
+     * 条件过滤        rowkey模糊查询
+     *
+     * @param tableName
+     * @param value
+     * @throws IOException
+     */
+    public static void queryByRowKey(String tableName, String value) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+            RowFilter filter = new RowFilter(CompareFilter.CompareOp.EQUAL, new RegexStringComparator(value));
+            scan.setFilter(filter);
+
+            scanner = table.getScanner(scan);
+        }
+        for (Result result : scanner) {
+            String rowKey = new String(result.getRow());
+
+            for (KeyValue keyValue : result.raw()) {
+                System.out.println(rowKey + ":" + new String(keyValue.getFamily()) + ":" + new String(keyValue.getQualifier()) + "=" + new String(keyValue.getValue()));
+            }
+        }
+    }
+
+    /**
+     * select * from table where c1 = 111 and c2 in (1, 2)
+     *
+     * @param tableName
+     * @param columnFamily
+     * @throws IOException
+     */
+    public static void query(String tableName, String columnFamily) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+
+            SingleColumnValueFilter filter1 = new SingleColumnValueFilter(columnFamily.getBytes(), "c1".getBytes(), CompareFilter.CompareOp.EQUAL, "aaa".getBytes());
+
+            FilterList filterAll = new FilterList();
+            filterAll.addFilter(filter1);
+
+            SingleColumnValueFilter filter2 = new SingleColumnValueFilter(columnFamily.getBytes(), "c4".getBytes(), CompareFilter.CompareOp.EQUAL, "101".getBytes());
+            SingleColumnValueFilter filter3 = new SingleColumnValueFilter(columnFamily.getBytes(), "c4".getBytes(), CompareFilter.CompareOp.EQUAL, "102".getBytes());
+
+            FilterList filterList = new FilterList(FilterList.Operator.MUST_PASS_ONE);
+            filterList.addFilter(filter2);
+            filterList.addFilter(filter3);
+
+            filterAll.addFilter(filterList);
+
+            scan.setFilter(filterAll);
+
+            scanner = table.getScanner(scan);
+        }
+
+        for (Result result : scanner) {
+            String rowKey = new String(result.getRow());
+
+            for (KeyValue keyValue : result.raw()) {
+                System.out.println(rowKey + ":" + new String(keyValue.getFamily()) + ":" + new String(keyValue.getQualifier()) + "=" + new String(keyValue.getValue()));
+            }
+        }
+    }
+
+    /**
+     * select * from table where rowkey like 'aaaa%'
+     * 查询rowkey以xxx开头的
+     *
+     * @param tableName
+     * @param columnFamily
+     * @throws IOException
+     */
+    public static void query(String tableName, String columnFamily, String value) throws IOException {
+        ResultScanner scanner;
+        Table table;
+        try (Connection connection = ConnectionFactory.createConnection(conf)) {
+
+            table = connection.getTable(TableName.valueOf(tableName));
+            Scan scan = new Scan();
+
+            PrefixFilter filter = new PrefixFilter(value.getBytes());
+            scan.setFilter(filter);
+
+            scanner = table.getScanner(scan);
+        }
+
+        for (Result result : scanner) {
+            String rowKey = new String(result.getRow());
+
+            for (KeyValue keyValue : result.raw()) {
+                System.out.println(rowKey + ":" + new String(keyValue.getFamily()) + ":" + new String(keyValue.getQualifier()) + "=" + new String(keyValue.getValue()));
+            }
+        }
+    }
+
+    /**
+     * 清空所有数据
+     *
+     * @param tableName
+     * @throws IOException
+     */
+    public static void truncate(String tableName) throws IOException {
+        try (HBaseAdmin admin = new HBaseAdmin(conf)) {
+
+            admin.disableTable(tableName);
+            admin.truncateTable(TableName.valueOf(tableName), false);
+        }
+    }
 
     public static void main(String[] args) throws IOException {
-        HbaseUtil hbaseUtil = new HbaseUtil();
-        String[] columns = new String[]{"id", "name"};
-        // hbaseUtil.createTable("info_user2", columns);
-        String user1 = "info_user";
-        String user2 = "info_user2";
+
+//        System.out.println(conf);
+        String andypan = "andypan";
+        String andypan2 = "andypan2";
+        String t5 = "t5";
+
+        //HbaseUtil.create("andypan", "info");
+        //HbaseUtil.create("andypan2", new String[]{"cf1","cf2"});
+
+        //  HbaseUtil.create("t5", new String[]{"f1", "f2"});
 
 
-//        String scores = "info_user";
+//        for (int i = 0; i < 5; i++) {
+//            Map<String, String> map = Maps.newHashMap();
+//            map.put("c1", "aaa" + i);
+//            map.put("c2", "bbb" + i);
+//
+//            HbaseUtil.put(t5, "r" + i, "f1", map);
+//        }
+//        for (int i = 0; i < 5; i++) {
+//            Map<String, String> map = Maps.newHashMap();
+//            map.put("c1", "ccc" + i);
+//            map.put("c2", "ddd" + i);
+//
+//            HbaseUtil.put(t5, "r" + i, "f2", map);
+//        }
+//        for (int i = 5; i < 15; i++) {
+//            Map<String, String> map = Maps.newHashMap();
+//            map.put("c1", "eee" + i);
+//
+//            HbaseUtil.put(t5, "r" + i, "f2", map);
+//        }
 
 
-        hbaseUtil.queryAllTable(user2);
+        // System.err.println(HbaseUtil.get("t5", "r1", "f1", "c1"));
 
-        // hbaseUtil.queryTableByRowKey(user2,"weixiaobao2");
+        //  HbaseUtil.put("t5", "r99", "f1", "c1", "99999");
+        /*
+        HbaseUtil.put("t5", "r1", "f1", "c1", "aaaaaa");
+        HbaseUtil.put("t5", "r1", "f1", "c2", "bbbbbb");
+        HbaseUtil.put("t5", "r1", "f2", "c1", "cccccc");
+        HbaseUtil.put("t5", "r2", "f2", "c1", "cccccc");
+
+        HbaseUtil.get("t5", "r1", "f1", "c1");
+  */
+        //  HbaseUtil.get("t5", "r1", "f1", "c1");
 
 
-        //hbaseUtil.deleteColumnFamily(user1, "id");
-//        hbaseUtil.addColumnFamily(user2, "wife2");
-        //hbaseUtil.deleteTable(scores);
+        //HbaseUtil.scan("t5");
+        // HbaseUtil.scan("t5", "f1", "c1");
+
+        // HbaseUtil.get("t5", "r1", "f1", "c1");
+  /*
+        HbaseUtil.scan("t5", "f1", "");
+
+        HbaseUtil.scan("t5", "f1", "c1");
+  */
+        //HbaseUtil.scan("t5", "f1");
+
+        //System.out.println(conf);
+//
+//        String[] rowKeys = new String[]{"r1", "r3"};
+//
+//        HbaseUtil22.delete("t5", rowKeys);
+//
+//        HbaseUtil22.scan("t5", "f1");
+//
+//        HbaseUtil22.delete("t5", "r2");
+//
+//        List<String> columns = new ArrayList<String>();
+//        columns.add("c1");
+//
+//        HbaseUtil22.scan("t5", "f1", columns, "r2", "r4");
+//
+//        HbaseUtil22.query("t5", "f1", "c1", "aaa1");
+//
+//        HbaseUtil22.queryByRowKey("t5", "[a-z][0-1]");
+
+        //创建订单表
+        //HbaseUtil.create("t_order", "info");
+
+        //创建订单明细项表
+        //HbaseUtil.create("t_item", "info");
+
+        /*for(int i=100; i<110; i++) {
+            Map<String, String> map = new HashMap<String, String>();
+            map.put("c_userid", "userid"+i);
+            map.put("c2", "bbb"+i);
+            map.put("c3", "ccc"+i);
+            map.put("c4", ""+i);
+            map.put("c5", "eee"+i);
+
+            HbaseUtil.put("t_order", "rowkey"+i, "info", map);
+        }
+
+        for(int i=100; i<110; i++) {
+            Map<String, String> map = new HashMap<String, String>();
+            map.put("c1", "aaa");
+            map.put("c2", "bbb"+i);
+            map.put("c3", "ccc"+i);
+            map.put("c4", i+"");
+            map.put("c5", "eee"+i);
+
+            HbaseUtil.put("t_item", i+"_"+"item", "info", map);
+        }*/
+
+        //query("t_item", "info");
+
+        //query("t_item", "info", "105_");
+//        HbaseUtil.truncate("t_order");
+//
+//        HbaseUtil.drop("t5");
     }
-
 }
